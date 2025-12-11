@@ -362,18 +362,126 @@ def streams(product, timeslist,*, time_error="resolution", product_dataframe=PRO
 if __name__ == "__main__":
     print("__name__ == '__main__'")
 
+    import matplotlib.pyplot as plt
+    import cartopy.crs as ccrs              # To create maps
+    import cartopy.feature as cfeature      # To show features on maps
+    from PIL import Image                   # To create GIFs
+    from tqdm import tqdm
+
+    states_provinces = cfeature.NaturalEarthFeature(category='cultural',name='admin_1_states_provinces_lines',scale='110m',facecolor='none')
+    countries = cfeature.NaturalEarthFeature(category='cultural', name='admin_0_countries',scale='110m',facecolor='none')
+    lakes = cfeature.NaturalEarthFeature(category="physical", name = 'lakes',scale = "110m", facecolor = 'none')
+    extent = [-125,-70,20,50]
+
+    user_dir = os.path.expanduser("~")  # NOTE: Make global?
+    local_dir = user_dir
+    mrmstream_folder = "mrmstream-downloads"  # NOTE: Make global?
+    img_folder = "images"
+    gif_folder = "gifs"
+    
+    img_directory = os.path.join(local_dir, img_folder)
+    gif_directory = os.path.join(local_dir, gif_folder)
+    if not os.path.exists(img_directory):
+        os.makedirs(img_directory)
+    if not os.path.exists(gif_directory):
+        os.makedirs(gif_directory)
+
     ### EXAMPLE ONE: Download one frame of MRMS Composite Reflectivity on June 1, 2025 ###
 
     product = 'MergedReflectivityQCComposite_00.50'
     timestamp = datetime(2025, 6, 1, 0, 0, 0)
+    image_name = f"{product}_{timestamp:%Y%m%dT%H%M%S}.png"
+    image_path = os.path.join(img_directory, image_name)
 
-    x = stream(product, timestamp, time_error=120)
+    x = stream(product, timestamp, time_error=120).to_dataarray()
+    x = x[0]
+
+    figure = plt.figure(figsize=[18,12])                   # Initialize figure
+    ax = figure.add_subplot(1,1,1,projection=ccrs.AlbersEqualArea(central_longitude=-100))  # Define map projection and set axis
+
+    ax.add_feature(states_provinces, edgecolor='gray')     # Add state boundaries to map
+    ax.add_feature(lakes, edgecolor='gray')
+    ax.add_feature(countries, edgecolor='black')           # Add national boundaries to map
+    ax.set_extent(extent)                                  # Define map extent
+
+    scale = ax.pcolormesh(                  # Plot data on map
+        x.longitude,
+        x.latitude,
+        x,                               # Data to plot.
+        transform=ccrs.PlateCarree(),
+        vmin = 0,
+        vmax = 75,
+        cmap = "gist_ncar"
+        )
+
+    cbar = plt.colorbar(scale, orientation='vertical', shrink=0.7, pad=0.02)
+    cbar.set_label('Reflectivity (dBZ)', fontsize=12)
+    cbar.ax.tick_params(labelsize=10)
+    ax.set_title(product, fontsize = 24)
+    ax.set_title(f"Valid {pd.to_datetime(x.valid_time.values).strftime("%D %H:%MZ")}", fontsize = 18, loc='right')
+
+    plt.savefig(image_path, bbox_inches='tight')  # Save the image with tight bounding box
+    plt.close(figure)         # Close the figure to begin the next iteration
 
     ### EXAMPLE TWO: Download first 30 mins of frames of MRMS Composite Reflectivity on June 1, 2025 ###
 
     product = 'MergedReflectivityQCComposite_00.50'
     timestamp1 = datetime(2025, 6, 1, 0, 0, 0)
     timestamp2 = datetime(2025, 6, 1, 0, 30, 0)
-    timeslist = make_timeslist(timestamp1, timestamp2)
+    timeslist = make_timeslist(timestamp1, timestamp2, 120)
 
-    y = streams(product, timeslist, time_error=120)
+    y = streams(product, timeslist, time_error=120).to_dataarray()
+    y = y[0]
+
+    images = []             # Initialize a list for image paths in order to create a GIF at the end.
+    frame = 0 
+    for data in tqdm(y, desc = "MRMS GIF"):                   # Run through each frame of HRRR data
+        figure = plt.figure(figsize=[18,12])                   # Initialize figure
+        ax = figure.add_subplot(1,1,1,projection=ccrs.AlbersEqualArea(central_longitude=-100))  # Define map projection and set axis
+
+        ax.add_feature(states_provinces, edgecolor='gray')     # Add state boundaries to map
+        ax.add_feature(lakes, edgecolor='gray')
+        ax.add_feature(countries, edgecolor='black')           # Add national boundaries to map
+        ax.set_extent(extent)                                  # Define map extent
+
+        scale = ax.pcolormesh(                  # Plot data on map
+            data.longitude,
+            data.latitude,
+            data,                               # Data to plot.
+            transform=ccrs.PlateCarree(),
+            vmin = 0,
+            vmax = 75,
+            cmap = "gist_ncar"
+            )
+
+        cbar = plt.colorbar(scale, orientation='vertical', shrink=0.7, pad=0.02)
+        cbar.set_label('Reflectivity (dBZ)', fontsize=12)
+        cbar.ax.tick_params(labelsize=10)
+
+        ax.set_title(product, fontsize = 24)
+        ax.set_title(f"Valid {pd.to_datetime(data.valid_time.values).strftime("%D %H:%MZ")}", fontsize = 18, loc='right')
+
+        file_time = pd.to_datetime(data.valid_time.values).strftime('%d%H%M')
+        image_name = f"{product}_{timestamp:%Y%m%dT%H%M%S}.png"
+        image_path = os.path.join(img_folder, image_name)
+        plt.savefig(image_path, bbox_inches='tight')  # Save the image with tight bounding box
+        images.append(image_path)  # Add the image to the list of images
+
+        plt.close(figure)         # Close the figure to begin the next iteration
+        frame += 1
+    
+    print(f"\n\tCreated {len(images)} images for MRMS and saved them at \n\t\t{img_folder}",3)
+    print("Beginning GIF creation.",10)
+
+    # Create a GIF of the images
+    gif_name = f"{product}_{timestamp1:%Y%m%dT%H%M%S}_{timestamp2:%Y%m%dT%H%M%S}.gif"
+    gif_path = os.path.join(gif_folder, gif_name)  # Name the gif
+    with Image.open(images[0]) as img:   # Open the first image in the list
+        img.save(                           
+            fp=gif_path,
+            format='GIF',
+            append_images=[Image.open(image) for image in images[1:]],  # Run through the rest of the images in the list to create the GIF
+            save_all=True,
+            duration=250,  # Duration of each frame in milliseconds
+            loop=0)
+    print("Finished MRMS GIF.",10)
