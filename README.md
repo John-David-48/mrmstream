@@ -29,3 +29,6 @@ understand where mrm is working.
 ## EXAMPLES:
 Two output image files are included in this repository using the outputs of mrm.stream() and 
 mrm.streams(), using 30 minutes of composite reflectivity data from June 1, 2025.
+
+Note: ChatGPT was used in the writing of code specifically for unzipping GRIB files and the 
+preliminary functions for navigating AWS.
