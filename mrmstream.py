@@ -379,8 +379,8 @@ if __name__ == "__main__":
     img_folder = "images"
     gif_folder = "gifs"
     
-    img_directory = os.path.join(local_dir, img_folder)
-    gif_directory = os.path.join(local_dir, gif_folder)
+    img_directory = os.path.join(local_dir, mrmstream_folder, img_folder)
+    gif_directory = os.path.join(local_dir, mrmstream_folder, gif_folder)
     if not os.path.exists(img_directory):
         os.makedirs(img_directory)
     if not os.path.exists(gif_directory):
@@ -417,7 +417,7 @@ if __name__ == "__main__":
     cbar = plt.colorbar(scale, orientation='vertical', shrink=0.7, pad=0.02)
     cbar.set_label('Reflectivity (dBZ)', fontsize=12)
     cbar.ax.tick_params(labelsize=10)
-    ax.set_title(product, fontsize = 24)
+    ax.set_title(product, fontsize = 24, loc='left')
     ax.set_title(f"Valid {pd.to_datetime(x.valid_time.values).strftime("%D %H:%MZ")}", fontsize = 18, loc='right')
 
     plt.savefig(image_path, bbox_inches='tight')  # Save the image with tight bounding box
@@ -458,24 +458,24 @@ if __name__ == "__main__":
         cbar.set_label('Reflectivity (dBZ)', fontsize=12)
         cbar.ax.tick_params(labelsize=10)
 
-        ax.set_title(product, fontsize = 24)
-        ax.set_title(f"Valid {pd.to_datetime(data.valid_time.values).strftime("%D %H:%MZ")}", fontsize = 18, loc='right')
+        ax.set_title(product, fontsize = 24, loc='left')
+        ax.set_title(f"Valid {pd.to_datetime(data.valid_time.values).strftime("%D %H:%M:%SZ")}", fontsize = 18, loc='right')
 
-        file_time = pd.to_datetime(data.valid_time.values).strftime('%d%H%M')
-        image_name = f"{product}_{timestamp:%Y%m%dT%H%M%S}.png"
-        image_path = os.path.join(img_folder, image_name)
+        file_time = pd.to_datetime(data.valid_time.values).strftime('%Y%m%dT%H%M%S')
+        image_name = f"{product}_{file_time}.png"
+        image_path = os.path.join(img_directory, image_name)
         plt.savefig(image_path, bbox_inches='tight')  # Save the image with tight bounding box
         images.append(image_path)  # Add the image to the list of images
 
         plt.close(figure)         # Close the figure to begin the next iteration
         frame += 1
     
-    print(f"\n\tCreated {len(images)} images for MRMS and saved them at \n\t\t{img_folder}",3)
+    print(f"\n\tCreated {len(images)} images for MRMS and saved them at \n\t\t{img_directory}",3)
     print("Beginning GIF creation.",10)
 
     # Create a GIF of the images
     gif_name = f"{product}_{timestamp1:%Y%m%dT%H%M%S}_{timestamp2:%Y%m%dT%H%M%S}.gif"
-    gif_path = os.path.join(gif_folder, gif_name)  # Name the gif
+    gif_path = os.path.join(gif_directory, gif_name)  # Name the gif
     with Image.open(images[0]) as img:   # Open the first image in the list
         img.save(                           
             fp=gif_path,
