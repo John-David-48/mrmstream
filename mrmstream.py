@@ -32,14 +32,16 @@ except FileNotFoundError as e:
 #-------------------#
 
 def find_mrms(aws_product, timestamp, time_error, location="CONUS", verbose=True):
-    """Finds the path for the best target file.
+    """Finds and returns the path and valid time for the best target file on AWS.
     
     Keyword arguments:
+    aws_product -- Amazon Web Services folder for the full MRMS product 
+        name (e.g. 'MergedReflectivityQCComposite_00.50')
     timestamp -- datetime of the target file
-    product -- aws folder for full MRMS product name (e.g. 'MergedReflectivityQCComposite_00.50')
-    location -- set of MRMS data to check (default 'CONUS')
     time_error -- window of time in seconds around timestamp that specifies if the closest match 
         is acceptable for the function to return
+    location -- folder of MRMS data to check (default 'CONUS')
+    verbose -- toggle for detailed print statements (default True)
     """
     
     # Shorten variable names for f strings
@@ -119,6 +121,16 @@ def find_mrms(aws_product, timestamp, time_error, location="CONUS", verbose=True
     return target_path, true_date_time
 
 def aws_download(target_path, local_dir=None, local_gz_path=None, overwrite=False):
+    """Downloads a raw geozipped file from Amazon Web Services (AWS), returning the path
+    
+    Keyword arguments:
+    target_path -- the path of the file to download from the bucket
+    local_dir -- the local directory for mrmstream to use for downloads 
+        (default None); setting local_dir=None uses user directory
+    local_gz_path -- the local path to download the geozipped file into
+        (default None); setting local_gz_path=None uses aws convention
+    overwrite -- permission to overwrite a file existing at that path (default False)
+    """
 
     # Assemble Amazon Web Services bucket object
     s3 = boto3.resource("s3", config=Config(signature_version=botocore.UNSIGNED))  # NOTE: Make global?
@@ -150,6 +162,16 @@ def aws_download(target_path, local_dir=None, local_gz_path=None, overwrite=Fals
     return abs_path
 
 def unzip_gz(gz_path, grib_path=None, overwrite=False, remove_gz=True):
+    """Unzips a local, geozipped file to a GRIB2 file, returning the path
+    
+    Keyword arguments:
+    gz_path -- the local path of the geozipped file to unzip
+    grib_path -- the local path to download the unzipped GRIB2 file into
+        (default None); setting grib_path=None uses aws convention
+    overwrite -- permission to overwrite a file existing at that path (default False)
+    remove_gz -- option to clean up local storage by removing the zipped file 
+        after unzipping it (default True)
+    """
 
     # Determine where to store the unzipped file
     if grib_path is None:
@@ -176,7 +198,21 @@ def unzip_gz(gz_path, grib_path=None, overwrite=False, remove_gz=True):
     return grib_path
 
 def grib2array(grib_path, nc_path=None, overwrite=False, remove_grib=True, save_nc=True, true_time=None, nc_compression=3, search_time=None):
+    """Returns an xarray and the path of the saved a netcdf given a GRIB2 filepath
     
+    Keyword arguments:
+    grib_path -- the local path of the GRIB2 file to read
+    nc_path -- the local path to download the xarray dataarray into (default None); 
+        setting nc_path=None uses aws convention
+    overwrite -- permission to overwrite a file existing at that path (default False)
+    remove_grib -- option to clean up local storage by removing the GRIB2 file 
+        after saving the netcdf (default True)
+    save_nc -- option to save a netcdf of the dataarray (default True)
+    true_time -- the time where the observed dataset is valid (default None)
+    nc_compression -- the compression level to use when saving the netcdf (default 3)
+    search_time -- the time that was originally used when searching for the aws file
+    """
+
     ds = xr.open_dataset(grib_path)
 
     if true_time is not None:
@@ -205,11 +241,27 @@ def grib2array(grib_path, nc_path=None, overwrite=False, remove_grib=True, save_
     
     if remove_grib:
         os.remove(grib_path)
-        os.remove(grib_path + ".9093e.idx")
+
+        # Attempting to remove index files
+        try:
+            os.remove(grib_path + ".9093e.idx")
+        except FileNotFoundError:
+            _ = 0
+        try:
+            os.remove(grib_path + ".idx")
+        except FileNotFoundError:
+            _ = 0
 
     return ds, nc_path
 
 def match_product(aws_folder_name, product_dataframe=PROD_DF):
+    """Returns the official MRMS product name given an s3 folder name
+    
+    Keyword arguments:
+    aws_folder_name -- the name of the aws s3 folder for the desired aws product
+    product_dataframe -- the dataframe of AWS MRMS products to query
+    """
+
     idx, prod = None, None
     for i, p in enumerate(product_dataframe["Name"]):
         if p == aws_folder_name[:len(p)]:
@@ -218,6 +270,13 @@ def match_product(aws_folder_name, product_dataframe=PROD_DF):
     return idx, prod
 
 def find_frequency(product_index, product_dataframe=PROD_DF):
+    """Returns a product's temporal resolution given its index in the product_dataframe
+    
+    Keyword arguments:
+    product_index -- the row index of the MRMS product in the product_dataframe
+    product_dataframe -- the dataframe of AWS MRMS products to query
+    """
+
     freq_secs = None
     freq_string = product_dataframe["Frequency"][product_index]
     if freq_string[-4:] == "-min":
@@ -225,6 +284,14 @@ def find_frequency(product_index, product_dataframe=PROD_DF):
     return freq_secs
 
 def make_timeslist(first_datetime, last_datetime, interval):
+    """Returns a list of datetimes given input similar to range(a,b,c)
+    
+    Keyword arguments:
+    first_datetime -- the first datetime of the list (INCLUSIVE)
+    last_datetime -- the last datetime of the list (INCLUSIVE if it 
+        could be made counting from first_datetime at the given interval)
+    interval -- the step between datetimes in SECONDS to create the list
+    """
 
     if first_datetime > last_datetime:
         raise ValueError("Ensure the start date is before the end date.")
@@ -239,6 +306,7 @@ def make_timeslist(first_datetime, last_datetime, interval):
     return timeslist
 
 def set_PROD_DF(prod_df):
+    """Takes prod_df and makes it the global PROD_DF"""
     global PROD_DF
     PROD_DF = prod_df
     return PROD_DF
@@ -249,6 +317,36 @@ def set_PROD_DF(prod_df):
 
 def stream(product, timestamp,*, time_error="resolution", product_dataframe=PROD_DF, location="CONUS", verbose=True, local_dir=None, local_gz_path=None, overwrite=False, 
            local_grib_path=None, nc_path=None, remove_gz=True, remove_grib=True, save_nc=True, nc_compression=3, skips_ok=False):
+    """Returns a dataarray and downloads a netcdf for a target product and timestamp, using AWS
+    
+    Keyword arguments:
+    product -- Amazon Web Services folder for the full MRMS product 
+        name (e.g. 'MergedReflectivityQCComposite_00.50')
+    timestamp -- datetime of the target file
+    time_error -- window of time in seconds around timestamp that specifies if the closest match 
+        is acceptable for the function to return (default "resolution"); if time_error="resolution", 
+        searches the product_dataframe for the product and uses the product's temporal resolution
+    product_dataframe -- the dataframe of AWS MRMS products to query
+    location -- folder of MRMS data to check (default 'CONUS')
+    verbose -- toggle for detailed print statements (default True)
+    local_dir -- the local directory for mrmstream to use for downloads 
+        (default None); setting local_dir=None uses user directory
+    local_gz_path -- the local path to download the geozipped file into
+        (default None); setting local_gz_path=None uses aws convention
+    overwrite -- permission to overwrite a file existing at that path (default False)
+    grib_path -- the local path to download the unzipped GRIB2 file into
+        (default None); setting grib_path=None uses aws convention
+    nc_path -- the local path to download the xarray dataarray into (default None); 
+        setting nc_path=None uses aws convention
+    remove_gz -- option to clean up local storage by removing the zipped file 
+        after unzipping it (default True)
+    remove_grib -- option to clean up local storage by removing the GRIB2 file 
+        after saving the netcdf (default True)
+    save_nc -- option to save a netcdf of the dataarray (default True)
+    nc_compression -- the compression level to use when saving the netcdf (default 3)
+    skips_ok -- interrupts the program if an acceptable file is not found for a target time 
+        (default False); if skips_ok=True and no file is found, the function returns None
+    """
 
     timestring = f"{timestamp:%Y-%m-%d %H:%M:%S}"
 
@@ -318,6 +416,37 @@ def stream(product, timestamp,*, time_error="resolution", product_dataframe=PROD
 def streams(product, timeslist,*, time_error="resolution", product_dataframe=PROD_DF, location="CONUS", verbose=True, local_dir=None, overwrite=False, 
             final_nc_path=None, save_big_nc=True, remove_gz=True, remove_grib=True, save_small_ncs=False, nc_compression=3, use_tqdm=True, skips_ok=False, 
             concat_along="valid_time"):
+    """Returns a dataarray and downloads a netcdf for a target product and list of timestamps, using AWS
+    
+    Keyword arguments:
+    product -- Amazon Web Services folder for the full MRMS product 
+        name (e.g. 'MergedReflectivityQCComposite_00.50')
+    timeslist -- list of datetimes for the target files
+    time_error -- window of time (in SECONDS) around timestamp that specifies if the closest match 
+        is acceptable for the function to return (default "resolution"); if time_error="resolution", 
+        searches the product_dataframe for the product and uses the product's temporal resolution
+    product_dataframe -- the dataframe of AWS MRMS products to query
+    location -- folder of MRMS data to check (default 'CONUS')
+    verbose -- toggle for detailed print statements (default True)
+    local_dir -- the local directory for mrmstream to use for downloads 
+        (default None); setting local_dir=None uses user directory
+    overwrite -- permission to overwrite a file existing at that path (default False)
+    final_nc_path -- the local path to download the concatenated xarray dataarray into 
+        (default None); setting nc_path=None uses product, start time, and end time.
+    save_big_nc -- option to save a netcdf of the concatenated dataarray (default True)
+    remove_gz -- option to clean up local storage by removing the zipped files 
+        after unzipping them (default True)
+    remove_grib -- option to clean up local storage by removing the GRIB2 files 
+        after creating the dataarrays (default True)
+    save_small_ncs -- option to save a netcdf of the each individual dataarray (default False)
+    nc_compression -- the compression level to use when saving the netcdf (default 3)
+    use_tqdm -- option to use the package tqdm to provide a progress bar for download while running
+    skips_ok -- interrupts the program if an acceptable file is not found for a target time 
+        (default False); if skips_ok=True and no file is found, the function returns None
+    concat_along -- which dimension to concatenate the dataframes along:
+        "valid_time" (default) is the time the observation was taken for
+        "time" is the target time used when searching for the MRMS products
+    """
     
     arrays_list = []
     
